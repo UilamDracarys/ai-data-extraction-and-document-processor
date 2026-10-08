@@ -337,14 +337,7 @@
         "method": "POST",
         "url": "https://YOUR_PROJECT.supabase.co/rest/v1/rpc/find_supplier_candidates",
         "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "",
-              "value": ""
-            }
-          ]
-        },
+        "headerParameters": {},
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"search_name\":  \"{{ $json.supplier_name }}\"\n}",
