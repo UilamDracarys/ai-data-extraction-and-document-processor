@@ -1,0 +1,1413 @@
+{
+  "name": "tc4-document-processing-and-data-extraction",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        1040
+      ],
+      "id": "14d8e152-a274-4af9-9a64-63a4150b45de",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1632,
+        368
+      ],
+      "id": "8f48557f-1e8b-4750-88ba-1706d15bf250",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"invoice_number\": {\n      \"type\": [\"string\", \"null\"]\n    },\n    \"supplier_name\": {\n      \"type\": [\"string\", \"null\"]\n    },\n    \"invoice_date\": {\n      \"type\": [\"string\", \"null\"]\n    },\n    \"due_date\": {\n      \"type\": [\"string\", \"null\"]\n    },\n    \"currency\": {\n      \"type\": \"string\"\n    },\n    \"subtotal\": {\n      \"type\": [\"number\", \"null\"]\n    },\n    \"tax\": {\n      \"type\": [\"number\", \"null\"]\n    },\n    \"withholding_tax\": {\n      \"type\": \"number\"\n    },\n    \"total\": {\n      \"type\": [\"number\", \"null\"]\n    },\n    \"line_items\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"description\": {\n            \"type\": \"string\"\n          },\n          \"quantity\": {\n            \"type\": \"number\"\n          },\n          \"unit_price\": {\n            \"type\": \"number\"\n          },\n          \"amount\": {\n            \"type\": \"number\"\n          }\n        },\n        \"required\": [\n          \"description\",\n          \"quantity\",\n          \"unit_price\",\n          \"amount\"\n        ]\n      }\n    },\n    \"extraction_notes\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    }\n  },\n  \"required\": [\n    \"invoice_number\",\n    \"supplier_name\",\n    \"invoice_date\",\n    \"due_date\",\n    \"currency\",\n    \"subtotal\",\n    \"tax\",\n    \"withholding_tax\",\n    \"total\",\n    \"line_items\",\n    \"extraction_notes\"\n  ]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1760,
+        368
+      ],
+      "id": "05a23d8f-3b2f-4d4b-9fdd-cb2aa938ba78",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const invoice = item.json.output;\n  const errors = [];\n\n  // -------------------------\n  // Required fields\n  // -------------------------\n\n  if (!invoice.invoice_number?.trim()) {\n    errors.push(\"Missing invoice number\");\n  }\n\n  if (!invoice.supplier_name?.trim()) {\n    errors.push(\"Missing supplier name\");\n  }\n\n  if (!invoice.invoice_date) {\n    errors.push(\"Missing invoice date\");\n  }\n\n  if (!invoice.currency?.trim()) {\n    errors.push(\"Missing currency\");\n  }\n\n  // -------------------------\n  // Monetary values\n  // -------------------------\n\n  if (\n    invoice.subtotal !== null &&\n    invoice.subtotal !== undefined &&\n    invoice.subtotal < 0\n  ) {\n    errors.push(\"Subtotal cannot be negative\");\n  }\n\n  if (\n    invoice.tax !== null &&\n    invoice.tax !== undefined &&\n    invoice.tax < 0\n  ) {\n    errors.push(\"Tax cannot be negative\");\n  }\n\n  if (invoice.withholding_tax < 0) {\n    errors.push(\"Withholding tax cannot be negative\");\n  }\n\n  if (\n    invoice.total !== null &&\n    invoice.total !== undefined &&\n    invoice.total < 0\n  ) {\n    errors.push(\"Total cannot be negative\");\n  }\n\n  // -------------------------\n  // Line items\n  // -------------------------\n\n  if (!Array.isArray(invoice.line_items) || invoice.line_items.length === 0) {\n    errors.push(\"Invoice has no line items\");\n  } else {\n    for (const [index, lineItem] of invoice.line_items.entries()) {\n      const itemNumber = index + 1;\n\n      if (!lineItem.description?.trim()) {\n        errors.push(`Line item ${itemNumber}: missing description`);\n      }\n\n      if (\n        lineItem.quantity === null ||\n        lineItem.quantity === undefined ||\n        !Number.isFinite(lineItem.quantity)\n      ) {\n        errors.push(`Line item ${itemNumber}: invalid quantity`);\n      } else if (lineItem.quantity <= 0) {\n        errors.push(\n          `Line item ${itemNumber}: quantity must be greater than 0`\n        );\n      }\n\n      if (\n        lineItem.unit_price === null ||\n        lineItem.unit_price === undefined ||\n        !Number.isFinite(lineItem.unit_price)\n      ) {\n        errors.push(`Line item ${itemNumber}: invalid unit price`);\n      } else if (lineItem.unit_price < 0) {\n        errors.push(\n          `Line item ${itemNumber}: unit price cannot be negative`\n        );\n      }\n\n      if (\n        lineItem.amount === null ||\n        lineItem.amount === undefined ||\n        !Number.isFinite(lineItem.amount)\n      ) {\n        errors.push(`Line item ${itemNumber}: invalid amount`);\n      } else if (lineItem.amount < 0) {\n        errors.push(\n          `Line item ${itemNumber}: amount cannot be negative`\n        );\n      }\n    }\n  }\n\n  // -------------------------\n  // Line items → subtotal\n  // -------------------------\n\n  if (\n    invoice.subtotal !== null &&\n    invoice.subtotal !== undefined &&\n    Array.isArray(invoice.line_items) &&\n    invoice.line_items.length > 0\n  ) {\n    const lineItemsTotal = invoice.line_items.reduce(\n      (sum, item) => sum + item.amount,\n      0\n    );\n\n    if (Math.abs(lineItemsTotal - invoice.subtotal) > 0.01) {\n      errors.push(\n        `Line items total does not equal subtotal: ${lineItemsTotal} != ${invoice.subtotal}`\n      );\n    }\n  }\n\n  // -------------------------\n  // Subtotal + tax - withholding\n  // -------------------------\n\n  if (\n    invoice.subtotal !== null &&\n    invoice.subtotal !== undefined &&\n    invoice.tax !== null &&\n    invoice.tax !== undefined &&\n    invoice.total !== null &&\n    invoice.total !== undefined\n  ) {\n    const calculatedTotal =\n      invoice.subtotal +\n      invoice.tax -\n      invoice.withholding_tax;\n\n    if (Math.abs(calculatedTotal - invoice.total) > 0.01) {\n      errors.push(\n        `Subtotal + tax - withholding tax does not equal total: ` +\n        `${invoice.subtotal} + ${invoice.tax} - ${invoice.withholding_tax} != ${invoice.total}`\n      );\n    }\n  }\n\n  // -------------------------\n  // Final result\n  // -------------------------\n\n  return {\n    json: {\n      ...invoice,\n      valid: errors.length === 0,\n      validation_errors: errors\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1968,
+        240
+      ],
+      "id": "2c53503c-e794-4ad0-b5b4-c2069f91b07a",
+      "name": "Validate AI Output"
+    },
+    {
+      "parameters": {
+        "jsCode": "const candidates = $input.all()\n  .map(item => item.json)\n  .filter(item =>\n    item.id !== undefined &&\n    item.name !== undefined &&\n    item.similarity_score !== undefined\n  );\n\nif (candidates.length === 0) {\n  return [{\n    json: {\n      match_status: \"NEW\"\n    }\n  }];\n}\n\nconst sorted = candidates.sort(\n  (a, b) => b.similarity_score - a.similarity_score\n);\n\nconst best = sorted[0];\nconst second = sorted[1];\n\n// Exact match is always safe.\nif (best.similarity_score === 1) {\n  return [{\n    json: {\n      match_status: \"MATCHED\",\n      supplier_id: best.id,\n      supplier_name: best.name,\n      similarity_score: best.similarity_score\n    }\n  }];\n}\n\nconst MATCH_THRESHOLD = 0.90;\nconst MIN_SCORE_GAP = 0.10;\n\nif (\n  best.similarity_score >= MATCH_THRESHOLD &&\n  (!second ||\n    best.similarity_score - second.similarity_score >= MIN_SCORE_GAP)\n) {\n  return [{\n    json: {\n      match_status: \"MATCHED\",\n      supplier_id: best.id,\n      supplier_name: best.name,\n      similarity_score: best.similarity_score\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    match_status: \"AMBIGUOUS\",\n    candidates: sorted\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2864,
+        144
+      ],
+      "id": "d9faa5e1-4dfa-40c4-9777-166a69932832",
+      "name": "Resolve supplier match"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ff58f559-0838-4e07-b89f-0ea97849fefc",
+              "leftValue": "={{ $json.match_status }}",
+              "rightValue": "MATCHED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3088,
+        144
+      ],
+      "id": "0e77d85f-d40e-40bf-b75d-c5cb30fd62fd",
+      "name": "Supplier Match Status"
+    },
+    {
+      "parameters": {
+        "jsCode": "const supplier = $json;\n\nreturn {\n  json: {\n    supplier_id: supplier.supplier_id,\n    supplier_name: supplier.supplier_name,\n    match_status: supplier.match_status\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3760,
+        -48
+      ],
+      "id": "a75bfb42-e4f0-4a87-ba7b-ed06fa8390fc",
+      "name": "Prepare Matched Supplier"
+    },
+    {
+      "parameters": {
+        "tableId": "invoices",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "supplier_id",
+              "fieldValue": "={{ $('Merge supplier details').item.json.supplier_id }}"
+            },
+            {
+              "fieldId": "invoice_number",
+              "fieldValue": "={{ $('Prepare Valid Invoice').item.json.invoice_number }}"
+            },
+            {
+              "fieldId": "invoice_date",
+              "fieldValue": "={{ $('Prepare Valid Invoice').item.json.invoice_date }}"
+            },
+            {
+              "fieldId": "due_date",
+              "fieldValue": "={{ $('Prepare Valid Invoice').item.json.due_date }}"
+            },
+            {
+              "fieldId": "currency",
+              "fieldValue": "={{ $('Prepare Valid Invoice').item.json.currency }}"
+            },
+            {
+              "fieldId": "subtotal",
+              "fieldValue": "={{ $('Prepare Valid Invoice').item.json.subtotal }}"
+            },
+            {
+              "fieldId": "tax",
+              "fieldValue": "={{ $('Prepare Valid Invoice').item.json.tax }}"
+            },
+            {
+              "fieldId": "total",
+              "fieldValue": "={{ $('Prepare Valid Invoice').item.json.total }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "VALIDATED"
+            },
+            {
+              "fieldId": "extraction_notes",
+              "fieldValue": "={{ $('Prepare Valid Invoice').item.json.extraction_notes }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4656,
+        144
+      ],
+      "id": "42efb8a7-8728-4dea-8503-ead300411d70",
+      "name": "Create Invoice",
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const invoice = $('Create Invoice').first().json;\nconst source = $('Prepare Valid Invoice').first().json;\n\nreturn source.line_items.map(item => ({\n  json: {\n    invoice_id: invoice.id,\n    description: item.description,\n    quantity: item.quantity,\n    unit_price: item.unit_price,\n    amount: item.amount\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4880,
+        144
+      ],
+      "id": "2be14497-2b00-4e2d-80a9-1f582aa9e57b",
+      "name": "Prepare Invoice Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "const invoice = $json;\n\nreturn {\n  json: {\n    ...invoice,\n    status: \"VALIDATED\"\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2416,
+        144
+      ],
+      "id": "2a0157c6-b903-4824-b3e2-d081e499c682",
+      "name": "Prepare Valid Invoice"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/data/invoice-test-pdfs/INV-2026-001-ambiguous-supplier-test.pdf",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -48,
+        1040
+      ],
+      "id": "89718691-7d72-4b49-b7cc-7a64605211bf",
+      "name": "Read Invoice"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "binaryPropertyName": "={{ $binary.attachment }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        592,
+        384
+      ],
+      "id": "0627ebd5-bb1e-4481-b9ad-505e803de5da",
+      "name": "Extract Data From Invoice"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f20585ee-6509-4195-a70e-22436e417445",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2192,
+        240
+      ],
+      "id": "6809b7e2-4fa9-4dc6-ad54-91476a38a325",
+      "name": "Is Invoice Data Valid?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "071028ec-3866-4168-a82d-99da8ce98824",
+              "name": "review_required",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "dd8bd274-f374-4fd8-81d0-ce40eceac0d7",
+              "name": "review_reason",
+              "value": "={{ $json.validation_errors.join(\"; \") }}",
+              "type": "string"
+            },
+            {
+              "id": "76da9269-2908-46d7-9946-8f1203418c74",
+              "name": "review_status",
+              "value": "PENDING",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2192,
+        432
+      ],
+      "id": "87275375-ba95-4b0b-afe8-37dc48757897",
+      "name": "Add Review Fields"
+    },
+    {
+      "parameters": {
+        "fromEmail": "sender@example.com",
+        "toEmail": "support@example.com",
+        "subject": "=[REVIEW REQUIRED] Invoice Number: {{ $json.invoice_number }} from {{ $json.supplier_name }}",
+        "html": "=<div style=\"font-family: Arial, Helvetica, sans-serif; max-width: 640px; margin: 0 auto; color: #333; line-height: 1.5;\">\n\n  <div style=\"background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 24px;\">\n\n    <h2 style=\"margin-top: 0; color: #dc3545;\">\n      Invoice Requires Human Review\n    </h2>\n\n    <p>\n      An invoice was processed automatically but did not pass validation.\n      Please review the details below.\n    </p>\n\n    <table style=\"width: 100%; border-collapse: collapse; margin: 20px 0;\">\n      <tr>\n        <td style=\"padding: 8px 0; font-weight: bold;\">Invoice Number</td>\n        <td style=\"padding: 8px 0;\">{{ $json.invoice_number }}</td>\n      </tr>\n\n      <tr>\n        <td style=\"padding: 8px 0; font-weight: bold;\">Supplier</td>\n        <td style=\"padding: 8px 0;\">{{ $json.supplier_name }}</td>\n      </tr>\n\n      <tr>\n        <td style=\"padding: 8px 0; font-weight: bold;\">Invoice Date</td>\n        <td style=\"padding: 8px 0;\">{{ $json.invoice_date }}</td>\n      </tr>\n\n      <tr>\n        <td style=\"padding: 8px 0; font-weight: bold;\">Total</td>\n        <td style=\"padding: 8px 0;\">{{ $json.currency }} {{ $json.total }}</td>\n      </tr>\n    </table>\n\n    <div style=\"background-color: #fff3cd; border: 1px solid #ffecb5; border-radius: 6px; padding: 16px; margin-bottom: 20px;\">\n      <h3 style=\"margin-top: 0; color: #856404;\">\n        Validation Issues\n      </h3>\n\n      <ul style=\"margin-bottom: 0; padding-left: 20px;\">\n        {{ $json.validation_errors.map(error => `<li style=\"margin-bottom: 6px;\">${error}</li>`).join('') }}\n      </ul>\n    </div>\n\n    <p>\n      Please review the original invoice and determine whether the data\n      should be corrected or approved manually.\n    </p>\n\n    <p style=\"margin-bottom: 0; color: #6c757d; font-size: 13px;\">\n      This message was generated automatically by the invoice processing workflow.\n    </p>\n\n  </div>\n\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2192,
+        608
+      ],
+      "id": "1c32f490-0e1a-4d18-be18-e118242b18e5",
+      "name": "Send Support Email",
+      "webhookId": "5e42faeb-1840-4f53-9b5e-9340d497bc86",
+      "credentials": {
+        "smtp": {
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_PROJECT.supabase.co/rest/v1/rpc/find_supplier_candidates",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_SECRET_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"search_name\":  \"{{ $json.supplier_name }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2640,
+        144
+      ],
+      "id": "0dfb3152-8522-42e6-858e-2a3a32b08cf8",
+      "name": "Find Supplier Candidates",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4b3532ad-a879-4078-8331-a0decdad1ed1",
+              "leftValue": "={{ $json.match_status }}",
+              "rightValue": "NEW",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3312,
+        240
+      ],
+      "id": "4c4d3e31-ed7b-4373-9123-3e5d7b6c92d4",
+      "name": "Is New Supplier?"
+    },
+    {
+      "parameters": {
+        "tableId": "suppliers",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "name",
+              "fieldValue": "={{ $('Prepare Valid Invoice').item.json.supplier_name }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3536,
+        144
+      ],
+      "id": "614f29f8-a624-4c6a-a6df-99a2f4bf19f6",
+      "name": "Add New Supplier",
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n    \"supplier_id\": {{ $json.id }}\n    \"supplier_name\": {{ $json.name }},\n    \"match_status\": \"NEW\"\n} ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3760,
+        144
+      ],
+      "id": "918c5202-c7c3-4740-90e7-b7a45cfa2b6f",
+      "name": "Update New Supplier Fields"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "invoices",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "invoice_number",
+              "keyValue": "={{ $('Prepare Valid Invoice').item.json.invoice_number }}"
+            },
+            {
+              "keyName": "supplier_id",
+              "keyValue": "={{ $json.supplier_id }}"
+            },
+            {
+              "keyName": "invoice_date",
+              "keyValue": "={{ $('Prepare Valid Invoice').item.json.invoice_date }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4208,
+        48
+      ],
+      "id": "08db914e-f464-4f6c-837b-4208e5e924d8",
+      "name": "Search existing invoice",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fbb279d2-5fa0-4c97-b12b-7acfe5075159",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4432,
+        48
+      ],
+      "id": "296f225d-8654-42f2-9100-9ff4fd321403",
+      "name": "Is invoice existing?"
+    },
+    {
+      "parameters": {
+        "fromEmail": "sender@example.com",
+        "toEmail": "support@example.com",
+        "subject": "=[DUPLICATE INVOICE] - {{ $('Prepare Valid Invoice').item.json.invoice_number }} - {{ $('Prepare Valid Invoice').item.json.supplier_name }}",
+        "html": "=<div style=\"font-family: Arial, Helvetica, sans-serif; max-width: 640px; margin: 0 auto; color: #333; line-height: 1.5;\">\n  <div style=\"background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 24px;\">\n    <h2 style=\"margin: 0 0 16px; color: #856404;\">Duplicate Invoice Detected</h2>\n\n    <p>An incoming invoice matched an invoice already in the system. No new invoice record was created.</p>\n\n    <div style=\"background-color: #fff3cd; border: 1px solid #ffecb5; border-radius: 6px; padding: 16px; margin: 20px 0;\">\n      <p style=\"margin: 0;\">\n        <strong>Invoice number:</strong> {{ $json.invoice_number }}<br>\n        <strong>Supplier:</strong> {{ $('Merge supplier details').item.json.supplier_name }}<br>\n        <strong>Submitted by:</strong> {{ $('Prepare Email and Attachment').item.json.sender.value[0].address }}\n      </p>\n    </div>\n\n    <p>Please check the existing invoice record and confirm whether any follow-up is needed.</p>\n\n    <p style=\"margin-bottom: 0; color: #6c757d; font-size: 13px;\">\n      Automated notification from the invoice processing workflow.\n    </p>\n  </div>\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        4656,
+        -48
+      ],
+      "id": "677f22f3-27e0-4446-8088-add9e5565515",
+      "name": "Send existing invoice email",
+      "webhookId": "b9238786-3ab2-4153-a18b-cb84b98814b4",
+      "credentials": {
+        "smtp": {
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3984,
+        48
+      ],
+      "id": "21282954-b785-47d2-8d89-e3cb05470af1",
+      "name": "Merge supplier details"
+    },
+    {
+      "parameters": {
+        "jsCode": "const match = $json;\nconst invoice = $('Prepare Valid Invoice').first().json;\n\nreturn {\n  json: {\n    review_required: true,\n    review_reason: \"Supplier match is ambiguous\",\n\n    supplier_name: invoice.supplier_name,\n    invoice_number: invoice.invoice_number,\n    invoice_date: invoice.invoice_date,\n\n    candidates: match.candidates\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3536,
+        336
+      ],
+      "id": "c387ad04-f0b2-406d-97db-f23cbc8a2452",
+      "name": "Prepare Supplier Review"
+    },
+    {
+      "parameters": {
+        "fromEmail": "sender@example.com",
+        "toEmail": "support@example.com",
+        "subject": "=[REVIEW REQUIRED] Ambiguous Supplier Name: {{ $json.supplier_name }}",
+        "html": "=<div style=\"font-family: Arial, Helvetica, sans-serif; max-width: 680px; margin: 0 auto; color: #333; line-height: 1.5;\">\n\n  <div style=\"background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 24px;\">\n\n    <h2 style=\"margin-top: 0; color: #856404;\">\n      Supplier Match Requires Review\n    </h2>\n\n    <p>\n      An invoice was processed, but the extracted supplier could not be\n      confidently matched to an existing supplier record.\n    </p>\n\n    <table style=\"width: 100%; border-collapse: collapse; margin: 20px 0;\">\n      <tr>\n        <td style=\"padding: 8px 0; font-weight: bold; width: 40%;\">\n          Extracted Supplier\n        </td>\n        <td style=\"padding: 8px 0;\">\n          {{ $json.supplier_name }}\n        </td>\n      </tr>\n\n      <tr>\n        <td style=\"padding: 8px 0; font-weight: bold;\">\n          Invoice Number\n        </td>\n        <td style=\"padding: 8px 0;\">\n          {{ $json.invoice_number }}\n        </td>\n      </tr>\n\n      <tr>\n        <td style=\"padding: 8px 0; font-weight: bold;\">\n          Invoice Date\n        </td>\n        <td style=\"padding: 8px 0;\">\n          {{ $json.invoice_date }}\n        </td>\n      </tr>\n    </table>\n\n    <div style=\"background-color: #fff3cd; border: 1px solid #ffecb5; border-radius: 6px; padding: 16px; margin-bottom: 20px;\">\n\n      <h3 style=\"margin-top: 0; color: #856404;\">\n        Possible Supplier Matches\n      </h3>\n\n      <table style=\"width: 100%; border-collapse: collapse; background-color: #ffffff;\">\n\n        <thead>\n          <tr>\n            <th style=\"text-align: left; padding: 10px; border-bottom: 1px solid #dee2e6;\">\n              Supplier\n            </th>\n            <th style=\"text-align: right; padding: 10px; border-bottom: 1px solid #dee2e6;\">\n              Match Score\n            </th>\n          </tr>\n        </thead>\n\n        <tbody>\n          {{ $json.candidates.map(candidate => `\n            <tr>\n              <td style=\"padding: 10px; border-bottom: 1px solid #eee;\">\n                ${candidate.name}\n              </td>\n              <td style=\"padding: 10px; border-bottom: 1px solid #eee; text-align: right;\">\n                ${(candidate.similarity_score * 100).toFixed(1)}%\n              </td>\n            </tr>\n          `).join('') }}\n        </tbody>\n\n      </table>\n\n    </div>\n\n    <p>\n      <strong>Action required:</strong>\n      Please review the invoice and determine whether one of the suggested\n      suppliers is the correct supplier.\n    </p>\n\n    <p style=\"margin-bottom: 0; color: #6c757d; font-size: 13px;\">\n      The invoice was not assigned to a supplier or created in the database\n      because the supplier match was ambiguous.\n    </p>\n\n  </div>\n\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3760,
+        336
+      ],
+      "id": "eddbe639-fd89-47fa-8d27-c088bfd01916",
+      "name": "Send ambiguous name email",
+      "webhookId": "da5671df-db0a-4e3e-844b-6cd5cb4e5a7a",
+      "credentials": {
+        "smtp": {
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -304,
+        480
+      ],
+      "id": "1ef2218b-73b6-4056-b84b-82e7e195d398",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Billing n8n"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{ $json.id }}",
+        "simple": false,
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -80,
+        480
+      ],
+      "id": "05f3f91f-8d24-4e4a-aaf1-7d2ce0504599",
+      "name": "Get a message",
+      "webhookId": "c863767e-91ee-49c9-bae4-ef50f8c5d2e7",
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Billing n8n"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "sender@example.com",
+        "toEmail": "={{ $('Prepare Email and Attachment').item.json.sender }}",
+        "subject": "[MISSING PDF ATTACHMENT]",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        592,
+        576
+      ],
+      "id": "91222a01-6dd1-4d18-92bb-f8b1b0654e4f",
+      "name": "Send an Email",
+      "webhookId": "b9952913-c2a3-4ce2-98f8-ed2c724d68ad",
+      "credentials": {
+        "smtp": {
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const email = $input.first().json;\nconst attachment = $input.first().binary;\n\nreturn {\n  json: {\n    sender: email.from,\n    subject: email.subject,\n  },\n  binary: {\n    attachment: attachment ? attachment.attachment_0 : null\n  }\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        144,
+        480
+      ],
+      "id": "20dcf7c7-951f-45f4-b9f0-a8a18b6ddcf9",
+      "name": "Prepare Email and Attachment"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "52deb9d9-fb21-49a7-a6e6-253b3dd52fab",
+              "leftValue": "={{ $binary }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "exists",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "25aa3f53-6e11-4c45-a380-717305f42134",
+              "leftValue": "={{ $binary.attachment }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        368,
+        480
+      ],
+      "id": "76edc25d-3388-411c-b10b-ca6a3b67fee7",
+      "name": "Does attachment exist?"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        832,
+        624
+      ],
+      "id": "1f586de1-d4eb-4022-81ab-88c0d0373623",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n\t\"file_type\": \"INVOICE\",\n\t\"extraction_notes\": [\"This is an invoice.\", \"Document contains the details pertaining to an invoice\"]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        960,
+        624
+      ],
+      "id": "faf3452d-0428-40e5-8adb-5521688046de",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a document analyzer that classifies a PDF based on the text extracted from it.\n\nYour task is to determine whether the document is an invoice.\n\nAnalyze the extracted text and look for evidence that the document represents an invoice. Consider invoice-related information such as, but not limited to:\n\n- Invoice number\n- Invoice date\n- Due date\n- Subtotal\n- Total / Total Amount Due\n- Tax / VAT\n- Supplier / Seller / Vendor name\n- Customer / Bill To information\n- Line items or descriptions of goods/services\n- Quantity\n- Unit price\n- Amount\n- Payment terms\n\nIMPORTANT:\n- Do NOT require all or most of these fields to be present.\n- Real invoices may legitimately omit fields such as due date, tax, subtotal, customer information, or payment terms.\n- Missing fields alone are NOT sufficient reason to classify a document as NON-INVOICE.\n- Classify based on the overall evidence and context of the document.\n- A document should generally be classified as INVOICE if it contains clear invoice terminology and multiple pieces of information consistent with an invoice, such as an invoice number, supplier/vendor, invoice date, line items, and/or an amount due.\n- If the document contains only generic financial information without sufficient evidence that it represents an invoice, classify it as NON-INVOICE.\n- Do not assume that a document is an invoice simply because it contains monetary amounts.\n- Do not modify, invent, or infer missing information.\n\nClassification rules:\n\nINVOICE:\nThe document contains sufficient evidence that it is an invoice, even if some invoice fields are missing.\n\nNON-INVOICE:\nThe document does not contain sufficient evidence that it is an invoice, or it clearly represents another type of document such as a purchase order, receipt, delivery document, statement, or unrelated document.\n\nIf the classification is uncertain, use the available evidence from the document and classify based on the most likely document type.\n\nYour output MUST follow this structure:\n\n{\n  \"file_type\": \"INVOICE\",\n  \"extraction_notes\": []\n}\n\nUse only these values for file_type:\n\n\"INVOICE\"\n\"NON-INVOICE\"\n\nIf there are relevant observations about missing or unusual information, include them in extraction_notes.\n\nFile text:\n{{ $json.text }}",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        816,
+        384
+      ],
+      "id": "2c14cd19-d324-44e6-bbb2-140a2313e0de",
+      "name": "Document Classifier"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an invoice and billing-document data extraction system.\n\nAnalyze the provided document and extract structured information from it.\n\nYour responsibilities are:\n\n1. Extract information from the document.\n2. Interpret clearly labeled fields and the roles of the parties.\n3. Apply only the interpretation rules explicitly defined below.\n4. Do not invent information.\n5. Do not modify amounts to make calculations balance.\n6. Return only the fields defined in the expected structure.\n\nGENERAL EXTRACTION RULES\n\n1. Preserve the invoice number exactly as shown.\n\n2. Identify the supplier, vendor, issuer, service provider, or biller.\n\n   Pay attention to labels such as:\n   - Supplier\n   - Vendor\n   - Seller\n   - Issued By\n   - From\n   - Biller\n   - Biller Name\n   - Service Provider\n\n   Do not use the client, customer, buyer, or bill-to party as the supplier.\n\n   If the document contains both a client/customer and a supplier/biller,\n   use the supplier/biller as supplier_name.\n\n   If the supplier cannot be reliably identified, return null and explain why\n   in extraction_notes.\n\n3. Extract invoice_date in YYYY-MM-DD format.\n\n4. Extract due_date in YYYY-MM-DD format when explicitly provided.\n\n5. If the document explicitly states that payment is due immediately,\n   such as \"IMMEDIATELY\", \"DUE IMMEDIATELY\", or equivalent wording,\n   use the invoice date as due_date.\n\n6. If explicit payment terms specify a period such as NET 30 or WITHIN 30 DAYS,\n   calculate the due date from the invoice date.\n\n7. If no due date or usable payment terms are provided, return null for due_date.\n\n8. If currency is explicitly shown, extract it.\n\n9. If currency is not shown, default to PHP and add an extraction note\n   explaining that PHP was assumed.\n\n10. Remove formatting artifacts caused by PDF extraction.\n\n    Examples:\n    \"n1,500.00\" → 1500\n    \"₱1,500.00\" → 1500\n    \"1,500.00\" → 1500\n\n11. Monetary values must be returned as numbers, not strings.\n\n12. Do not include currency symbols or thousands separators in numeric fields.\n\nLINE ITEMS\n\n13. Extract separately listed invoice line items.\n\n14. For each line item extract:\n    - description\n    - quantity\n    - unit_price\n    - amount\n\n15. If quantity is not explicitly stated, use quantity = 1 and add an\n    extraction note explaining that the quantity was assumed.\n\n16. Preserve repeated descriptions as separate line items when they appear\n    as separate rows.\n\n17. Do not change line-item amounts merely to make calculations balance.\n\nTOTALS, TAXES, AND DEDUCTIONS\n\n18. Extract the document's subtotal when explicitly provided.\n\n19. If a clear pre-tax/pre-deduction total is provided instead of a subtotal,\n    it may be used as subtotal when its meaning is clear.\n\n20. Extract VAT or other clearly identified sales tax into tax.\n\n21. If tax is explicitly shown as zero, return tax = 0.\n\n22. Do not treat withholding tax as sales tax.\n\n23. If the document explicitly identifies withholding tax, EWT,\n    expanded withholding tax, or an equivalent withholding-tax deduction,\n    extract it into withholding_tax as a positive number.\n\n24. If no withholding tax is present, return withholding_tax = 0.\n\n25. If the document contains other deductions, discounts, fees, adjustments,\n    charges, or other monetary components that are not represented by the\n    defined fields, do not force them into another field.\n\n    Preserve the document's values and describe the additional component\n    in extraction_notes.\n\n26. When multiple total-like fields exist, select the amount that most\n    clearly represents the final amount payable as total.\n\n    Prefer fields such as:\n    - Total Amount Due\n    - Amount Due\n    - Balance Due\n    - Grand Total\n\n27. Do not change extracted amounts to make them mathematically consistent.\n\n28. The downstream validation system will validate the following supported\n    calculation:\n\n    subtotal + tax - withholding_tax = total\n\n29. If the document contains additional charges, discounts, adjustments,\n    or other calculations that make the document use a different formula,\n    preserve the document's actual values and describe the additional\n    calculation in extraction_notes.\n\n30. Do not invent an adjustment amount merely to make the calculation balance.\n\nMISSING OR AMBIGUOUS INFORMATION\n\n31. If information cannot be reliably extracted, return null where permitted\n    by the schema.\n\n32. Do not guess missing invoice numbers, supplier names, dates, amounts,\n    or taxes.\n\n33. extraction_notes must always be an array.\n\n34. Use extraction_notes to record:\n    - assumptions\n    - calculated dates\n    - missing information\n    - ambiguous information\n    - unusual deductions or charges\n    - additional calculations\n    - apparent inconsistencies\n\nIMPORTANT\n\nThe AI is responsible for extraction and reasonable interpretation.\n\nThe AI must preserve the values found in the document.\n\nDo not \"fix\" inconsistent invoice calculations.\n\nThe downstream validation step is responsible for determining whether the\nextracted invoice satisfies the supported validation rules.\n\nEXPECTED STRUCTURE\n\n{\n  \"invoice_number\": \"string or null\",\n  \"supplier_name\": \"string or null\",\n  \"invoice_date\": \"YYYY-MM-DD or null\",\n  \"due_date\": \"YYYY-MM-DD or null\",\n  \"currency\": \"string\",\n  \"subtotal\": 0,\n  \"tax\": 0,\n  \"withholding_tax\": 0,\n  \"total\": 0,\n  \"line_items\": [\n    {\n      \"description\": \"string\",\n      \"quantity\": 0,\n      \"unit_price\": 0,\n      \"amount\": 0\n    }\n  ],\n  \"extraction_notes\": []\n}\n\nInvoice text:\n\n{{ $('Extract Data From Invoice').item.json.text }}",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1616,
+        144
+      ],
+      "id": "4057af0a-afd3-4414-b76c-2c873afbdac7",
+      "name": "Invoice Data Extractor"
+    },
+    {
+      "parameters": {
+        "fromEmail": "sender@example.com",
+        "toEmail": "={{ $('Prepare Email and Attachment').item.json.sender.value[0].address }}",
+        "subject": "INVALID ATTACHMENT",
+        "html": "=<div style=\"font-family: Arial, Helvetica, sans-serif; max-width: 640px; margin: 0 auto; color: #333; line-height: 1.5;\">\n\n  <div style=\"background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 24px;\">\n\n    <h2 style=\"margin-top: 0; color: #dc3545;\">\n      Invalid Invoice Attachment\n    </h2>\n\n    <p>\n      We received your email, but the attached file could not be processed\n      as an invoice.\n    </p>\n\n    <div style=\"background-color: #fff3cd; border: 1px solid #ffecb5; border-radius: 6px; padding: 16px; margin: 20px 0;\">\n\n      <h3 style=\"margin-top: 0; color: #856404;\">\n        Processing Notes\n      </h3>\n\n      <ul style=\"margin-bottom: 0; padding-left: 20px;\">\n        {{ $json.extraction_notes.map(note => `<li style=\"margin-bottom: 6px;\">${note}</li>`).join('') }}\n      </ul>\n\n    </div>\n\n    <p>\n      Please make sure you are sending a valid invoice as a PDF attachment\n      and resend the email.\n    </p>\n\n    <p style=\"margin-bottom: 0; color: #6c757d; font-size: 13px;\">\n      This message was generated automatically by the invoice processing system.\n    </p>\n\n  </div>\n\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1392,
+        608
+      ],
+      "id": "4467d31a-95c3-4644-835c-8460885a1d54",
+      "name": "Send invalid attachment email",
+      "webhookId": "bf5dc49d-ba20-4b1b-97e2-f7f1483ed085",
+      "credentials": {
+        "smtp": {
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $json.output;\n\nconst allowedTypes = [\n  \"INVOICE\",\n  \"NON-INVOICE\"\n];\n\nconst errors = [];\n\nif (!result || typeof result !== \"object\") {\n  errors.push(\"Classifier returned no valid output\");\n}\n\nif (!allowedTypes.includes(result?.file_type)) {\n  errors.push(`Invalid file_type: ${result?.file_type}`);\n}\n\nif (!Array.isArray(result?.extraction_notes)) {\n  errors.push(\"extraction_notes must be an array\");\n}\n\nreturn {\n  json: {\n    ...result,\n    classification_valid: errors.length === 0,\n    classification_errors: errors\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        384
+      ],
+      "id": "d78edd93-0798-4884-956d-d8e75b922bb5",
+      "name": "Validate Output"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7539d11d-15f5-431c-a7f4-31cb9c64267b",
+              "leftValue": "={{ $json.file_type }}",
+              "rightValue": "INVOICE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1392,
+        384
+      ],
+      "id": "7d3d0019-6af1-4049-b5df-cb7fa22e4b76",
+      "name": "Is attachment an invoice?"
+    },
+    {
+      "parameters": {
+        "content": "# GMAIL TRIGGER & ATTACHMENT CLASSIFICATION\n\n## Receive the email and checks if there are attachments.\n\n\n1. GMail trigger receives the email.\n2. Check the message for sender and attachment.\n3. If no attachment is found, send an email back to the sender.\n4. If attachment is found, extract the sender details and the attachment text.\n5. AI handles the classification whether attachment is an invoice or not.\n6. Validate and prepare AI output. \n7. If AI output classifies the extracted text as invoice, proceed to the next step.\n8. If text is not an invoice, send an email back to the sender.",
+        "height": 672,
+        "width": 1872
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -336,
+        112
+      ],
+      "typeVersion": 1,
+      "id": "001bd037-084a-4939-bc4c-243c4ae42a0e",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "# INVOICE DATA EXTRACTION\n\n## Extracts the data, analyze and validate the AI output.\n\n1. AI analyzes extracted invoice data and generates a structured output.\n2. Validate AI output.\n3. If the data is valid, proceed to the next step.\n4. If invalid, send email to support for review. ",
+        "height": 976,
+        "width": 784,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1568,
+        -192
+      ],
+      "typeVersion": 1,
+      "id": "ae1b48b7-ad7a-412a-8347-6e8149c6a5c1",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "# SUPPLIER VALIDATION\n\n## Validate the details of the supplier, match against existing data on Supabase, and generate final details.\n\n\n1. Get supplier details and match against existing data on Supabase via pre-made function that returns match score. \n2. If supplier in the invoice is not found, create the supplier record and return it as a NEW record.\n3. If an exact match is found in Supabase, return it as MATCHED record.\n4. If match score failed but a match is found, classify the supplier as AMBIGUOUS and send an email to support for validation.",
+        "height": 720,
+        "width": 1744,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2384,
+        -192
+      ],
+      "typeVersion": 1,
+      "id": "2c7c252e-55a0-4093-9aeb-e468142f46b1",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "# DUPLICATE INVOICE CHECKING AND RECORDING\n\n## Checks Supabase for matching invoice and record after validation\n\n1. Checks the invoice details against Supabase data for matching details (Invoice Number, Invoice Date, Supplier ID)\n2. If invoice has a match, send a support email for validation and correction.\n3. If invoice is new, record the invoice and invoice items on Supabase.",
+        "height": 512,
+        "width": 1152,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        4160,
+        -192
+      ],
+      "typeVersion": 1,
+      "id": "51d1ada4-5988-4707-acbf-37c3d5ba20ff",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "tableId": "invoice_items",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "invoice_id",
+              "fieldValue": "={{ $json.invoice_id }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.description }}"
+            },
+            {
+              "fieldId": "quantity",
+              "fieldValue": "={{ $json.quantity }}"
+            },
+            {
+              "fieldId": "unit_price",
+              "fieldValue": "={{ $json.unit_price }}"
+            },
+            {
+              "fieldId": "amount",
+              "fieldValue": "={{ $json.amount }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        5104,
+        144
+      ],
+      "id": "730fc251-0281-4ba2-a966-41a095332b98",
+      "name": "Add invoice items",
+      "credentials": {
+        "supabaseApi": {
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# MANUAL TRIGGER FOR TESTING\n\n## Test using local files",
+        "height": 352,
+        "width": 480,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -336,
+        864
+      ],
+      "typeVersion": 1,
+      "id": "cf0eb6f3-70de-49b3-98ec-f405b9c49104",
+      "name": "Sticky Note5"
+    }
+  ],
+  "pinData": {
+    "Gmail Trigger": [
+      {
+        "json": {
+          "id": "1a116600335990c8",
+          "threadId": "1a116600335990c8",
+          "snippet": "Sent from Yahoo Mail. Get the app",
+          "payload": {
+            "mimeType": "multipart/mixed"
+          },
+          "sizeEstimate": 12079,
+          "historyId": "3746",
+          "internalDate": "1791376748000",
+          "labels": [
+            {
+              "id": "INBOX",
+              "name": "INBOX"
+            },
+            {
+              "id": "IMPORTANT",
+              "name": "IMPORTANT"
+            },
+            {
+              "id": "CATEGORY_PERSONAL",
+              "name": "CATEGORY_PERSONAL"
+            },
+            {
+              "id": "UNREAD",
+              "name": "UNREAD"
+            }
+          ],
+          "From": "Example Sender <sender@example.com>",
+          "To": "billing@example.com",
+          "Subject": ""
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Read Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Invoice Data Extractor",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Invoice Data Extractor",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate AI Output": {
+      "main": [
+        [
+          {
+            "node": "Is Invoice Data Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve supplier match": {
+      "main": [
+        [
+          {
+            "node": "Supplier Match Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supplier Match Status": {
+      "main": [
+        [
+          {
+            "node": "Prepare Matched Supplier",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is New Supplier?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Matched Supplier": {
+      "main": [
+        [
+          {
+            "node": "Merge supplier details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Invoice": {
+      "main": [
+        [
+          {
+            "node": "Prepare Invoice Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Valid Invoice": {
+      "main": [
+        [
+          {
+            "node": "Find Supplier Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Invoice": {
+      "main": [
+        []
+      ]
+    },
+    "Extract Data From Invoice": {
+      "main": [
+        [
+          {
+            "node": "Document Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Invoice Data Valid?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Valid Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Add Review Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Review Fields": {
+      "main": [
+        [
+          {
+            "node": "Send Support Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Supplier Candidates": {
+      "main": [
+        [
+          {
+            "node": "Resolve supplier match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Invoice Items": {
+      "main": [
+        [
+          {
+            "node": "Add invoice items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Supplier?": {
+      "main": [
+        [
+          {
+            "node": "Add New Supplier",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Supplier Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add New Supplier": {
+      "main": [
+        [
+          {
+            "node": "Update New Supplier Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update New Supplier Fields": {
+      "main": [
+        [
+          {
+            "node": "Merge supplier details",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Search existing invoice": {
+      "main": [
+        [
+          {
+            "node": "Is invoice existing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is invoice existing?": {
+      "main": [
+        [
+          {
+            "node": "Send existing invoice email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge supplier details": {
+      "main": [
+        [
+          {
+            "node": "Search existing invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Supplier Review": {
+      "main": [
+        [
+          {
+            "node": "Send ambiguous name email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a message": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email and Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email and Attachment": {
+      "main": [
+        [
+          {
+            "node": "Does attachment exist?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Does attachment exist?": {
+      "main": [
+        [
+          {
+            "node": "Extract Data From Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Document Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Document Classifier",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document Classifier": {
+      "main": [
+        [
+          {
+            "node": "Validate Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invoice Data Extractor": {
+      "main": [
+        [
+          {
+            "node": "Validate AI Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Output": {
+      "main": [
+        [
+          {
+            "node": "Is attachment an invoice?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is attachment an invoice?": {
+      "main": [
+        [
+          {
+            "node": "Invoice Data Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send invalid attachment email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "hd9qe2a9VjNtzKR3",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "e0501182-863c-414c-a54c-547aa05f2800",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1727460908a969cf65fb52bfc279b4465ddb84eca0285180fbb9969b0299f975"
+  },
+  "nodeGroups": [],
+  "id": "FOP8CNPTBf49K1yu",
+  "tags": []
+}
