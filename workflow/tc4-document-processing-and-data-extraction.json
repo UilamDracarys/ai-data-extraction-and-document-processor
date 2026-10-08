@@ -341,7 +341,7 @@
           "parameters": [
             {
               "name": "apikey",
-              "value": "YOUR_SUPABASE_SECRET_KEY"
+              "value": ""
             }
           ]
         },
