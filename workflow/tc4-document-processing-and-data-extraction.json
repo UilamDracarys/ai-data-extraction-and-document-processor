@@ -340,7 +340,7 @@
         "headerParameters": {
           "parameters": [
             {
-              "name": "apikey",
+              "name": "",
               "value": ""
             }
           ]
